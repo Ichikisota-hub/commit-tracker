@@ -3,16 +3,22 @@ import { ja } from 'date-fns/locale';
 
 export function generateMorningMessage(
   date: Date,
-  entries: { name: string; planned: number }[]
+  entries: { name: string; planned: number; visitTarget: number }[]
 ): string {
   const dateStr = format(date, 'M月d日(E)', { locale: ja });
-  const lines = entries.map((e) => `・${e.name}：${e.planned}件`);
+  // 0件の人は非稼働なので除外
+  const activeEntries = entries.filter((e) => e.planned > 0);
+  if (activeEntries.length === 0) return '';
+  const lines = activeEntries.map((e) => {
+    const visit = e.visitTarget > 0 ? `（目標訪問：${e.visitTarget}件）` : '';
+    return `・${e.name}：${e.planned}件${visit}`;
+  });
   return [
     `【${dateStr} 本日のコミット】`,
     '',
     ...lines,
     '',
-    `合計：${entries.reduce((s, e) => s + e.planned, 0)}件`,
+    `合計：${activeEntries.reduce((s, e) => s + e.planned, 0)}件`,
     '',
     '全員今日も頑張りましょう！💪',
   ].join('\n');
@@ -24,12 +30,14 @@ export function generateEveningMessage(
   nonAchievers: { name: string; actual: number; planned: number; makeupInfo?: string }[]
 ): string {
   const dateStr = format(date, 'M月d日(E)', { locale: ja });
+  // 0件コミットの人は除外
+  const activeAchievers = achievers.filter((e) => e.planned > 0);
+  const activeNonAchievers = nonAchievers.filter((e) => e.planned > 0);
 
-  const achieverLines = achievers.map(
+  const achieverLines = activeAchievers.map(
     (e) => `✅ ${e.name}：${e.actual}件 / ${e.planned}件`
   );
-
-  const nonAchieverLines = nonAchievers.map((e) => {
+  const nonAchieverLines = activeNonAchievers.map((e) => {
     const makeup = e.makeupInfo ? `　→ 補填：${e.makeupInfo}` : '';
     return `❌ ${e.name}：${e.actual}件 / ${e.planned}件${makeup}`;
   });
