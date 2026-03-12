@@ -25,6 +25,12 @@ export type WorkDay = {
   is_committed: boolean;
   makeup_date?: string;
   makeup_day_of_week?: string;
+  // KPI項目
+  contract_target: number;
+  visit_count: number;
+  negotiation_count: number;
+  indoor_count: number;
+  contract_count: number;
   created_at: string;
 };
 
