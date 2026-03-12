@@ -1,39 +1,24 @@
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 
-export type KpiEntry = {
-  name: string;
-  planned: number;
-  visitTarget: number;
-  contractTarget: number;
-  visit: number;
-  negotiation: number;
-  indoor: number;
-  contract: number;
-};
-
-export function generateMorningMessage(date: Date, entries: KpiEntry[]): string {
+export function generateMorningMessage(
+  date: Date,
+  entries: { name: string; planned: number; visitTarget: number }[]
+): string {
   const dateStr = format(date, 'M月d日(E)', { locale: ja });
+  // 0件の人は非稼働なので除外
   const activeEntries = entries.filter((e) => e.planned > 0);
   if (activeEntries.length === 0) return '';
-
   const lines = activeEntries.map((e) => {
-    const kpiLines = [];
-    if (e.contractTarget > 0) kpiLines.push(`　本日契約目標：${e.contractTarget}件`);
-    kpiLines.push(`　▼今日やるべき数値`);
-    if (e.visit > 0)       kpiLines.push(`　訪問　　：${e.visit}件`);
-    if (e.negotiation > 0) kpiLines.push(`　商談　　：${e.negotiation}件`);
-    if (e.indoor > 0)      kpiLines.push(`　宅内イン：${e.indoor}件`);
-    if (e.contract > 0)    kpiLines.push(`　契約　　：${e.contract}件`);
-    return [`・${e.name}：${e.planned}件`, ...kpiLines].join('\n');
+    const visit = e.visitTarget > 0 ? `（目標訪問：${e.visitTarget}件）` : '';
+    return `・${e.name}：${e.planned}件${visit}`;
   });
-
   return [
     `【${dateStr} 本日のコミット】`,
     '',
-    lines.join('\n\n'),
+    ...lines,
     '',
-    `稼働人数：${activeEntries.length}名　合計：${activeEntries.reduce((s, e) => s + e.planned, 0)}件`,
+    `合計：${activeEntries.reduce((s, e) => s + e.planned, 0)}件`,
     '',
     '全員今日も頑張りましょう！💪',
   ].join('\n');

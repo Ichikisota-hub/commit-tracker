@@ -4,21 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { supabase, User, WorkDay } from './lib/supabase';
-import { generateMorningMessage, generateEveningMessage, generatePersonalStatusMessage, KpiEntry } from './lib/line-messages';
+import { generateMorningMessage, generateEveningMessage, generatePersonalStatusMessage } from './lib/line-messages';
 
 type Tab = 'morning' | 'evening' | 'status' | 'members';
-
-type KpiState = {
-  planned: number;
-  visitTarget: number;
-  contractTarget: number;
-  visit: number;
-  negotiation: number;
-  indoor: number;
-  contract: number;
-};
-
-const defaultKpi = (): KpiState => ({ planned: 0, visitTarget: 0, contractTarget: 0, visit: 0, negotiation: 0, indoor: 0, contract: 0 });
 
 function LineBox({ title, text }: { title: string; text: string }) {
   const [copied, setCopied] = useState(false);
@@ -47,35 +35,6 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
   );
 }
 
-// KPI入力フィールド1つ
-function KpiField({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{label}</span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <button
-          onClick={() => onChange(Math.max(0, value - 1))}
-          style={{ width: 32, height: 32, borderRadius: 8, border: '2px solid var(--border)', background: 'white', fontSize: 18, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}>
-          −
-        </button>
-        <input
-          type="number" inputMode="numeric" min={0}
-          value={value || ''}
-          placeholder="0"
-          onChange={e => onChange(parseInt(e.target.value) || 0)}
-          style={{ width: 56, textAlign: 'center', border: '2px solid var(--border)', borderRadius: 10, padding: '6px 4px', fontSize: 18, fontWeight: 900, fontFamily: 'JetBrains Mono, monospace', background: '#fafaf7', outline: 'none' }}
-        />
-        <button
-          onClick={() => onChange(value + 1)}
-          style={{ width: 32, height: 32, borderRadius: 8, border: '2px solid var(--border)', background: 'var(--ink)', fontSize: 18, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-          ＋
-        </button>
-        <span style={{ fontSize: 13, color: 'var(--muted)', width: 16 }}>件</span>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   const [tab, setTab] = useState<Tab>('morning');
   const [users, setUsers] = useState<User[]>([]);
@@ -85,24 +44,22 @@ export default function App() {
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
 
-  // KPI state per user
-  const [kpi, setKpi] = useState<Record<string, KpiState>>({});
-  // Evening actual + makeup
+  const [planned, setPlanned] = useState<Record<string, number>>({});
+  const [visitTarget, setVisitTarget] = useState<Record<string, number>>({});
   const [actual, setActual] = useState<Record<string, number>>({});
   const [makeupInfo, setMakeupInfo] = useState<Record<string, string>>({});
-  // Status
   const [statusUserId, setStatusUserId] = useState('');
-  // Members
   const [editingDays, setEditingDays] = useState<Record<string, number>>({});
+
   const [newName, setNewName] = useState('');
   const [newTarget, setNewTarget] = useState('');
   const [newVisitTarget, setNewVisitTarget] = useState('');
   const [newRemainingDays, setNewRemainingDays] = useState('');
   const [addingUser, setAddingUser] = useState(false);
-  // Expanded member cards
-  const [expandedUser, setExpandedUser] = useState<string | null>(null);
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+  const showToast = (msg: string) => {
+    setToast(msg); setTimeout(() => setToast(null), 2500);
+  };
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -119,32 +76,17 @@ export default function App() {
 
   useEffect(() => {
     if (!users.length) return;
-    const initKpi: Record<string, KpiState> = {};
-    const initActual: Record<string, number> = {};
-    const initDays: Record<string, number> = {};
-    users.forEach(u => {
-      const wd = workDays.find(w => w.user_id === u.id && w.date === todayStr);
-      initKpi[u.id] = {
-        planned: wd?.planned_count ?? 0,
-        visitTarget: wd?.daily_visit_target ?? u.daily_visit_target ?? 0,
-        contractTarget: wd?.contract_target ?? 0,
-        visit: wd?.visit_count ?? 0,
-        negotiation: wd?.negotiation_count ?? 0,
-        indoor: wd?.indoor_count ?? 0,
-        contract: wd?.contract_count ?? 0,
-      };
-      initActual[u.id] = wd?.actual_count ?? 0;
-      initDays[u.id] = u.remaining_work_days ?? 0;
+    const ip: Record<string, number> = {}, ia: Record<string, number> = {}, iv: Record<string, number> = {}, id: Record<string, number> = {};
+    users.forEach((u) => {
+      const wd = workDays.find((w) => w.user_id === u.id && w.date === todayStr);
+      ip[u.id] = wd?.planned_count ?? 0;
+      ia[u.id] = wd?.actual_count ?? 0;
+      iv[u.id] = wd?.daily_visit_target ?? u.daily_visit_target ?? 0;
+      id[u.id] = u.remaining_work_days ?? 0;
     });
-    setKpi(initKpi);
-    setActual(initActual);
-    setEditingDays(initDays);
+    setPlanned(ip); setActual(ia); setVisitTarget(iv); setEditingDays(id);
     if (!statusUserId && users[0]) setStatusUserId(users[0].id);
   }, [users, workDays]);
-
-  const setUserKpi = (userId: string, field: keyof KpiState, val: number) => {
-    setKpi(prev => ({ ...prev, [userId]: { ...prev[userId], [field]: val } }));
-  };
 
   const calcAutoRemaining = (userId: string) =>
     eachDayOfInterval({ start: today, end: endOfMonth(today) })
@@ -152,19 +94,7 @@ export default function App() {
 
   const saveMorning = async () => {
     await supabase.from('work_days').upsert(
-      users.map(u => {
-        const k = kpi[u.id] || defaultKpi();
-        return {
-          user_id: u.id, date: todayStr,
-          planned_count: k.planned,
-          daily_visit_target: k.visitTarget,
-          contract_target: k.contractTarget,
-          visit_count: k.visit,
-          negotiation_count: k.negotiation,
-          indoor_count: k.indoor,
-          contract_count: k.contract,
-        };
-      }),
+      users.map(u => ({ user_id: u.id, date: todayStr, planned_count: planned[u.id] || 0, daily_visit_target: visitTarget[u.id] || 0 })),
       { onConflict: 'user_id,date', ignoreDuplicates: false }
     );
     showToast('稼働前コミットを保存しました'); loadData();
@@ -172,16 +102,13 @@ export default function App() {
 
   const saveEvening = async () => {
     await supabase.from('work_days').upsert(
-      users.map(u => {
-        const k = kpi[u.id] || defaultKpi();
-        return {
-          user_id: u.id, date: todayStr,
-          planned_count: k.planned, actual_count: actual[u.id] || 0,
-          daily_visit_target: k.visitTarget,
-          is_committed: (actual[u.id] || 0) >= k.planned,
-          makeup_day_of_week: makeupInfo[u.id] || null,
-        };
-      }),
+      users.map(u => ({
+        user_id: u.id, date: todayStr,
+        planned_count: planned[u.id] || 0, actual_count: actual[u.id] || 0,
+        daily_visit_target: visitTarget[u.id] || 0,
+        is_committed: (actual[u.id] || 0) >= (planned[u.id] || 0),
+        makeup_day_of_week: makeupInfo[u.id] || null,
+      })),
       { onConflict: 'user_id,date', ignoreDuplicates: false }
     );
     showToast('実績を保存しました'); loadData();
@@ -215,26 +142,15 @@ export default function App() {
     return { user, totalActual, workedDays, dailyAvg, remaining, remainingCount, pct, dailyNeeded, autoRemaining };
   };
 
-  const activeUsers = users.filter(u => (kpi[u.id]?.planned || 0) > 0);
-  const achievers = activeUsers.filter(u => (actual[u.id] || 0) >= (kpi[u.id]?.planned || 1));
-  const nonAchievers = activeUsers.filter(u => (actual[u.id] || 0) < (kpi[u.id]?.planned || 1));
-  const inactiveUsers = users.filter(u => (kpi[u.id]?.planned || 0) === 0);
+  const activeUsers = users.filter(u => (planned[u.id] || 0) > 0);
+  const achievers = activeUsers.filter(u => (actual[u.id] || 0) >= (planned[u.id] || 1));
+  const nonAchievers = activeUsers.filter(u => (actual[u.id] || 0) < (planned[u.id] || 1));
+  const inactiveUsers = users.filter(u => (planned[u.id] || 0) === 0);
 
-  const morningEntries: KpiEntry[] = users.map(u => ({
-    name: u.name,
-    planned: kpi[u.id]?.planned || 0,
-    visitTarget: kpi[u.id]?.visitTarget || 0,
-    contractTarget: kpi[u.id]?.contractTarget || 0,
-    visit: kpi[u.id]?.visit || 0,
-    negotiation: kpi[u.id]?.negotiation || 0,
-    indoor: kpi[u.id]?.indoor || 0,
-    contract: kpi[u.id]?.contract || 0,
-  }));
-
-  const morningMsg = generateMorningMessage(today, morningEntries);
+  const morningMsg = generateMorningMessage(today, users.map(u => ({ name: u.name, planned: planned[u.id] || 0, visitTarget: visitTarget[u.id] || 0 })));
   const eveningMsg = generateEveningMessage(today,
-    achievers.map(u => ({ name: u.name, actual: actual[u.id] || 0, planned: kpi[u.id]?.planned || 0 })),
-    nonAchievers.map(u => ({ name: u.name, actual: actual[u.id] || 0, planned: kpi[u.id]?.planned || 0, makeupInfo: makeupInfo[u.id] }))
+    achievers.map(u => ({ name: u.name, actual: actual[u.id] || 0, planned: planned[u.id] || 0 })),
+    nonAchievers.map(u => ({ name: u.name, actual: actual[u.id] || 0, planned: planned[u.id] || 0, makeupInfo: makeupInfo[u.id] }))
   );
   const statusStats = getUserStats(statusUserId);
   const statusMsg = statusStats ? generatePersonalStatusMessage(statusStats.user.name, statusStats.user.monthly_target, statusStats.totalActual, statusStats.remaining, statusStats.dailyAvg) : '';
@@ -268,6 +184,7 @@ export default function App() {
         {/* ===== MORNING ===== */}
         {tab === 'morning' && (
           <div>
+            {/* Save banner */}
             <div className="save-banner">
               <div>
                 <div className="save-banner-text">📝 稼働前コミット入力</div>
@@ -276,21 +193,20 @@ export default function App() {
               <button className="save-btn" onClick={saveMorning}>保存する</button>
             </div>
 
+            {/* Summary */}
             <div className="summary-bar">
               <span>稼働中 <strong>{activeUsers.length}名</strong></span>
-              <span>本日合計 <strong>{users.reduce((s, u) => s + (kpi[u.id]?.planned || 0), 0)}件</strong></span>
+              <span>本日合計 <strong>{Object.values(planned).reduce((s, v) => s + v, 0)}件</strong></span>
             </div>
 
+            {/* Member cards */}
             <div className="card">
               {users.length === 0
                 ? <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>メンバーを追加してください</div>
                 : users.map(u => {
-                  const k = kpi[u.id] || defaultKpi();
-                  const isActive = k.planned > 0;
-                  const isExpanded = expandedUser === u.id;
+                  const isActive = (planned[u.id] || 0) > 0;
                   return (
                     <div key={u.id} className={`member-row${isActive ? '' : ' inactive'}`}>
-                      {/* 上部：名前・バッジ・コミット件数 */}
                       <div className="member-name-row">
                         <div>
                           <div className="member-name">{u.name}</div>
@@ -300,73 +216,20 @@ export default function App() {
                           {isActive ? '✅ 稼働' : '💤 非稼働'}
                         </span>
                       </div>
-
-                      {/* コミット件数（大きく） */}
-                      <div style={{ marginBottom: 12 }}>
-                        <div className="input-label" style={{ marginBottom: 4 }}>本日コミット件数</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <button onClick={() => setUserKpi(u.id, 'planned', Math.max(0, k.planned - 1))}
-                            style={{ width: 40, height: 40, borderRadius: 10, border: '2px solid var(--border)', background: 'white', fontSize: 20, fontWeight: 700, cursor: 'pointer', color: 'var(--muted)' }}>−</button>
-                          <input type="number" inputMode="numeric" min={0}
-                            value={k.planned || ''} placeholder="0"
-                            onChange={e => setUserKpi(u.id, 'planned', parseInt(e.target.value) || 0)}
-                            style={{ flex: 1, textAlign: 'center', border: '2px solid var(--border)', borderRadius: 10, padding: '8px', fontSize: 24, fontWeight: 900, fontFamily: 'JetBrains Mono, monospace', background: '#fafaf7', outline: 'none' }} />
-                          <button onClick={() => setUserKpi(u.id, 'planned', k.planned + 1)}
-                            style={{ width: 40, height: 40, borderRadius: 10, border: '2px solid var(--ink)', background: 'var(--ink)', fontSize: 20, fontWeight: 700, cursor: 'pointer', color: 'white' }}>＋</button>
-                          <span style={{ fontSize: 14, color: 'var(--muted)' }}>件</span>
+                      <div className="input-row">
+                        <div className="input-group">
+                          <div className="input-label">コミット件数</div>
+                          <input type="number" inputMode="numeric" min={0} className="num-input"
+                            value={planned[u.id] || ''} placeholder="0"
+                            onChange={e => setPlanned(p => ({ ...p, [u.id]: parseInt(e.target.value) || 0 }))} />
+                        </div>
+                        <div className="input-group">
+                          <div className="input-label">目標訪問件数</div>
+                          <input type="number" inputMode="numeric" min={0} className="num-input"
+                            value={visitTarget[u.id] || ''} placeholder="0"
+                            onChange={e => setVisitTarget(p => ({ ...p, [u.id]: parseInt(e.target.value) || 0 }))} />
                         </div>
                       </div>
-
-                      {/* KPI展開ボタン */}
-                      <button
-                        onClick={() => setExpandedUser(isExpanded ? null : u.id)}
-                        style={{ width: '100%', background: isExpanded ? '#f0f0ec' : 'white', border: '1.5px solid var(--border)', borderRadius: 10, padding: '9px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: 'Zen Kaku Gothic New, sans-serif' }}>
-                        <span>📋 今日やるべき数値を入力</span>
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{isExpanded ? '▲ 閉じる' : '▼ 開く'}</span>
-                      </button>
-
-                      {/* KPI詳細入力（展開時） */}
-                      {isExpanded && (
-                        <div style={{ marginTop: 10, background: '#fafaf7', borderRadius: 12, padding: '4px 14px' }}>
-                          {/* 契約目標（大きく強調） */}
-                          <div style={{ padding: '12px 0 8px', borderBottom: '2px solid var(--border)' }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>本日契約目標</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <button onClick={() => setUserKpi(u.id, 'contractTarget', Math.max(0, k.contractTarget - 1))}
-                                style={{ width: 36, height: 36, borderRadius: 8, border: '2px solid var(--border)', background: 'white', fontSize: 18, fontWeight: 700, cursor: 'pointer', color: 'var(--muted)' }}>−</button>
-                              <input type="number" inputMode="numeric" min={0}
-                                value={k.contractTarget || ''} placeholder="0"
-                                onChange={e => setUserKpi(u.id, 'contractTarget', parseInt(e.target.value) || 0)}
-                                style={{ flex: 1, textAlign: 'center', border: '2px solid #ffc300', borderRadius: 10, padding: '8px', fontSize: 22, fontWeight: 900, fontFamily: 'JetBrains Mono, monospace', background: '#fffbea', outline: 'none' }} />
-                              <button onClick={() => setUserKpi(u.id, 'contractTarget', k.contractTarget + 1)}
-                                style={{ width: 36, height: 36, borderRadius: 8, border: '2px solid #ffc300', background: '#ffc300', fontSize: 18, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>＋</button>
-                              <span style={{ fontSize: 13, color: 'var(--muted)' }}>件</span>
-                            </div>
-                          </div>
-
-                          {/* 4項目 */}
-                          <div style={{ paddingTop: 4 }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '10px 0 4px' }}>▼ 今日やるべき数値</div>
-                            <KpiField label="訪問" value={k.visit} onChange={v => setUserKpi(u.id, 'visit', v)} />
-                            <KpiField label="商談" value={k.negotiation} onChange={v => setUserKpi(u.id, 'negotiation', v)} />
-                            <KpiField label="宅内イン" value={k.indoor} onChange={v => setUserKpi(u.id, 'indoor', v)} />
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0' }}>
-                              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--danger)' }}>契約</span>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <button onClick={() => setUserKpi(u.id, 'contract', Math.max(0, k.contract - 1))}
-                                  style={{ width: 32, height: 32, borderRadius: 8, border: '2px solid var(--border)', background: 'white', fontSize: 18, fontWeight: 700, cursor: 'pointer', color: 'var(--muted)' }}>−</button>
-                                <input type="number" inputMode="numeric" min={0}
-                                  value={k.contract || ''} placeholder="0"
-                                  onChange={e => setUserKpi(u.id, 'contract', parseInt(e.target.value) || 0)}
-                                  style={{ width: 56, textAlign: 'center', border: '2px solid var(--danger)', borderRadius: 10, padding: '6px 4px', fontSize: 18, fontWeight: 900, fontFamily: 'JetBrains Mono, monospace', background: '#fff5f3', outline: 'none' }} />
-                                <button onClick={() => setUserKpi(u.id, 'contract', k.contract + 1)}
-                                  style={{ width: 32, height: 32, borderRadius: 8, border: '2px solid var(--danger)', background: 'var(--danger)', fontSize: 18, fontWeight: 700, cursor: 'pointer', color: 'white' }}>＋</button>
-                                <span style={{ fontSize: 13, color: 'var(--muted)', width: 16 }}>件</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   );
                 })}
@@ -390,23 +253,28 @@ export default function App() {
               <button className="save-btn" onClick={saveEvening}>保存する</button>
             </div>
 
+            {/* Summary cards */}
             <div className="summary-cards">
-              {[
-                { icon: '✅', label: '達成', val: achievers.length, color: 'var(--success)' },
-                { icon: '❌', label: '未達', val: nonAchievers.length, color: 'var(--danger)' },
-                { icon: '💤', label: '非稼働', val: inactiveUsers.length, color: 'var(--muted)' },
-              ].map(item => (
-                <div key={item.label} className="summary-card">
-                  <div className="summary-card-icon">{item.icon}</div>
-                  <div className="summary-card-label">{item.label}</div>
-                  <div className="summary-card-val" style={{ color: item.color }}>{item.val}名</div>
-                </div>
-              ))}
+              <div className="summary-card">
+                <div className="summary-card-icon">✅</div>
+                <div className="summary-card-label">達成</div>
+                <div className="summary-card-val" style={{ color: 'var(--success)' }}>{achievers.length}名</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-card-icon">❌</div>
+                <div className="summary-card-label">未達</div>
+                <div className="summary-card-val" style={{ color: 'var(--danger)' }}>{nonAchievers.length}名</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-card-icon">💤</div>
+                <div className="summary-card-label">非稼働</div>
+                <div className="summary-card-val" style={{ color: 'var(--muted)' }}>{inactiveUsers.length}名</div>
+              </div>
             </div>
 
             <div className="card">
               {users.map(u => {
-                const p = kpi[u.id]?.planned || 0;
+                const p = planned[u.id] || 0;
                 const a = actual[u.id] || 0;
                 const isActive = p > 0;
                 const ok = isActive && a >= p;
@@ -420,28 +288,27 @@ export default function App() {
                       {isActive && <span className={`badge ${ok ? 'badge-success' : 'badge-danger'}`}>{ok ? '✅ 達成' : '❌ 未達'}</span>}
                     </div>
                     {isActive && (
-                      <>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <button onClick={() => setActual(prev => ({ ...prev, [u.id]: Math.max(0, (prev[u.id] || 0) - 1) }))}
-                            style={{ width: 40, height: 40, borderRadius: 10, border: '2px solid var(--border)', background: 'white', fontSize: 20, fontWeight: 700, cursor: 'pointer', color: 'var(--muted)' }}>−</button>
-                          <input type="number" inputMode="numeric" min={0}
+                      <div className="input-row">
+                        <div className="input-group">
+                          <div className="input-label">実績件数</div>
+                          <input type="number" inputMode="numeric" min={0} className="num-input"
                             value={actual[u.id] || ''} placeholder="0"
-                            onChange={e => setActual(prev => ({ ...prev, [u.id]: parseInt(e.target.value) || 0 }))}
-                            style={{ flex: 1, textAlign: 'center', border: `2px solid ${ok ? 'var(--success)' : 'var(--border)'}`, borderRadius: 10, padding: '8px', fontSize: 24, fontWeight: 900, fontFamily: 'JetBrains Mono, monospace', background: ok ? 'var(--success-bg)' : '#fafaf7', outline: 'none' }} />
-                          <button onClick={() => setActual(prev => ({ ...prev, [u.id]: (prev[u.id] || 0) + 1 }))}
-                            style={{ width: 40, height: 40, borderRadius: 10, border: '2px solid var(--ink)', background: 'var(--ink)', fontSize: 20, fontWeight: 700, cursor: 'pointer', color: 'white' }}>＋</button>
-                          <span style={{ fontSize: 14, color: 'var(--muted)' }}>件</span>
+                            onChange={e => setActual(prev => ({ ...prev, [u.id]: parseInt(e.target.value) || 0 }))} />
                         </div>
                         {!ok && (
-                          <select className="makeup-select" value={makeupInfo[u.id] || ''}
-                            onChange={e => setMakeupInfo(prev => ({ ...prev, [u.id]: e.target.value }))}>
-                            <option value="">📅 補填予定日を選択</option>
-                            {['月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'].map(d => (
-                              <option key={d} value={d}>{d}</option>
-                            ))}
-                          </select>
+                          <div className="input-group">
+                            <div className="input-label">補填予定日</div>
+                            <select className="makeup-select"
+                              value={makeupInfo[u.id] || ''}
+                              onChange={e => setMakeupInfo(prev => ({ ...prev, [u.id]: e.target.value }))}>
+                              <option value="">曜日を選択</option>
+                              {['月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'].map(d => (
+                                <option key={d} value={d}>{d}</option>
+                              ))}
+                            </select>
+                          </div>
                         )}
-                      </>
+                      </div>
                     )}
                   </div>
                 );
@@ -456,6 +323,7 @@ export default function App() {
         {tab === 'status' && (
           <div>
             <div className="section-title">📊 個人現状確認</div>
+
             <div className="member-chips">
               {users.map(u => (
                 <button key={u.id} className={`chip${statusUserId === u.id ? ' active' : ''}`} onClick={() => setStatusUserId(u.id)}>
@@ -478,17 +346,19 @@ export default function App() {
                     sub={statusStats.dailyNeeded > statusStats.dailyAvg ? '⚠️ 要UP' : '✅ OK'} />
                 </div>
 
-                <div className="card" style={{ padding: 16 }}>
-                  <div className="progress-label-row">
-                    <span style={{ fontWeight: 900 }}>月間進捗</span>
-                    <span className="progress-pct">{statusStats.pct}%</span>
-                  </div>
-                  <div className="progress-track">
-                    <div className="progress-fill" style={{ width: `${Math.min(statusStats.pct, 100)}%` }} />
-                  </div>
-                  <div className="progress-sub">
-                    <span>{statusStats.totalActual}件達成</span>
-                    <span>目標 {statusStats.user.monthly_target}件</span>
+                <div className="card" style={{ padding: '16px' }}>
+                  <div className="progress-wrap" style={{ marginBottom: 0 }}>
+                    <div className="progress-label-row">
+                      <span style={{ fontWeight: 900 }}>月間進捗</span>
+                      <span className="progress-pct">{statusStats.pct}%</span>
+                    </div>
+                    <div className="progress-track">
+                      <div className="progress-fill" style={{ width: `${Math.min(statusStats.pct, 100)}%` }} />
+                    </div>
+                    <div className="progress-sub">
+                      <span>{statusStats.totalActual}件達成</span>
+                      <span>目標 {statusStats.user.monthly_target}件</span>
+                    </div>
                   </div>
                 </div>
 
@@ -503,6 +373,7 @@ export default function App() {
           <div>
             <div className="section-title">👥 メンバー管理</div>
 
+            {/* Add form */}
             <div className="card" style={{ marginBottom: 14 }}>
               <div className="add-form">
                 <div className="add-form-title">➕ メンバー追加</div>
@@ -517,9 +388,13 @@ export default function App() {
                       <input className="form-input" type="number" inputMode="numeric" placeholder="100" value={newTarget} onChange={e => setNewTarget(e.target.value)} />
                     </div>
                     <div className="form-field">
-                      <div className="form-label">残稼働日数</div>
-                      <input className="form-input" type="number" inputMode="numeric" placeholder="15" value={newRemainingDays} onChange={e => setNewRemainingDays(e.target.value)} />
+                      <div className="form-label">1日目標訪問</div>
+                      <input className="form-input" type="number" inputMode="numeric" placeholder="5" value={newVisitTarget} onChange={e => setNewVisitTarget(e.target.value)} />
                     </div>
+                  </div>
+                  <div className="form-field">
+                    <div className="form-label">残稼働日数</div>
+                    <input className="form-input" type="number" inputMode="numeric" placeholder="15" value={newRemainingDays} onChange={e => setNewRemainingDays(e.target.value)} />
                   </div>
                   <button className="add-btn" onClick={addUser} disabled={addingUser || !newName || !newTarget}>
                     {addingUser ? '追加中...' : '追加する'}
@@ -528,6 +403,7 @@ export default function App() {
               </div>
             </div>
 
+            {/* Member list */}
             <div className="card">
               {users.length === 0
                 ? <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>メンバーがいません</div>
@@ -538,7 +414,10 @@ export default function App() {
                       <div className="mmr-top">
                         <div>
                           <div className="mmr-name">{u.name}</div>
-                          <div className="mmr-stats">目標 {u.monthly_target}件 ／ 実績 {stats?.totalActual ?? 0}件（{stats?.pct ?? 0}%）</div>
+                          <div className="mmr-stats">
+                            目標 {u.monthly_target}件 ／ 実績 {stats?.totalActual ?? 0}件
+                            （{stats?.pct ?? 0}%）
+                          </div>
                         </div>
                         <button className="delete-btn" onClick={async () => {
                           if (confirm(`${u.name}さんを削除しますか？`)) {
@@ -547,11 +426,15 @@ export default function App() {
                           }
                         }}>削除</button>
                       </div>
+
+                      {/* Progress */}
                       <div style={{ marginBottom: 10 }}>
                         <div style={{ background: 'var(--border)', borderRadius: 99, height: 8, overflow: 'hidden' }}>
                           <div style={{ height: '100%', borderRadius: 99, background: 'linear-gradient(90deg, #00b4d8, #00c48c)', width: `${Math.min(stats?.pct ?? 0, 100)}%`, transition: 'width 0.5s' }} />
                         </div>
                       </div>
+
+                      {/* Remaining days */}
                       <div>
                         <div className="form-label" style={{ marginBottom: 6 }}>残稼働日数</div>
                         <div className="mmr-days-row">
@@ -567,11 +450,17 @@ export default function App() {
                   );
                 })}
             </div>
+
+            <div className="info-box">
+              💡 <strong>残稼働日について</strong><br />
+              「自動計算」は稼働前コミットで目標が入力済みの今月残り日数です。<br />
+              手動で入力して「更新」を押すと個人現状確認に反映されます。
+            </div>
           </div>
         )}
       </div>
 
-      {/* Bottom nav */}
+      {/* Bottom navigation */}
       <nav className="bottom-nav">
         {navTabs.map(t => (
           <button key={t.key} className={`nav-item${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>
